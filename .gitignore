@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.npz
+*.npy
+*.mp4
+data/
+stmc_videos/
