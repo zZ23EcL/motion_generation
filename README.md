@@ -254,8 +254,13 @@ python reference_sanity.py <cache>.npz --trim_lead 5 \
 `--trim` slices all 8 time-indexed arrays (`qpos/qvel/xpos/xquat/cvel/subtree_com/site_xpos/site_xmat`)
 consistently and fixes `split_points`, so the trimmed cache stays FK-consistent and is directly evaluable.
 
-**Intended use of the verdict for scoped-STMC deployment:** treat `INTERIOR_BLOWUP`/`BOTH` clips as
-reject-and-regenerate (the reference is genuinely non-physical — still valid).
+**Deployment GATE (now implemented):** the one-line output leads with `GATE=ACCEPT|REJECT`. A reference is
+`REJECT`ed if it has an `INTERIOR_BLOWUP` (physically-impossible frame) **or** never-settles
+(`jnorm_p10 > --settle_thresh`, default 0.5; calibrated on n=7: pass ~0.3 vs fail ~0.78). Both are
+**reject-and-regenerate** signals — per the resolved stress-test finding, never-settling is over-agitated
+generation *content*, not smoothing-fixable, so the guard is a generation-quality gate, **not** a
+trim/smooth filter. `FRAME0_TRANSIENT` does not affect the gate (falsified boundary effect). Batch-scan
+example: `for f in .../STMC/*.npz; do python reference_sanity.py "$f" --quiet; done | grep GATE=REJECT`.
 
 > ⚠️ **Correction (2026-06-05, after testing):** the `FRAME0_TRANSIENT` flag turned out **not** to be a
 > useful failure predictor and "auto-trim-then-track" does **not** work. The passing `loco_walk_forward_0`

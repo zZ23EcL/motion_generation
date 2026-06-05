@@ -127,11 +127,24 @@ def do_report(path, args):
     name = os.path.basename(path)
     freq = float(d["frequency"]) if "frequency" in d else float("nan")
 
+    # DEPLOYMENT GATE (the settled lever): a scoped-STMC reference is followable iff it has no
+    # physically-impossible interior frame AND it actually settles (reaches a quiet stance phase).
+    # never-settles is the resolved failure mode (over-agitated generation content; NOT smoothing-fixable),
+    # so it is a reject-and-REGENERATE signal, not something to filter. frame-0 transient is ignored here
+    # (falsified boundary effect). Threshold --settle_thresh calibrated on n=7 (5 pass ~0.3 vs 2 fail ~0.78).
+    never_settles = res["jnorm_p10"] > args.settle_thresh
+    reject_reasons = []
+    if res["flagged"]:
+        reject_reasons.append("interior-blowup")
+    if never_settles:
+        reject_reasons.append(f"never-settles(p10={res['jnorm_p10']:.2f}>{args.settle_thresh})")
+    gate = "REJECT" if reject_reasons else "ACCEPT"
+
     # one-line machine-greppable summary first (good for batch scans)
-    print(f"[sanity] {name}: VERDICT={v}  T={T} ({T/freq:.1f}s)  "
+    print(f"[sanity] {name}: GATE={gate}  VERDICT={v}  T={T} ({T/freq:.1f}s)  "
           f"jnorm_p10={res['jnorm_p10']:.2f}  rootang_max={res['rootang'].max():.2f}  "
-          f"qjump_max={res['qjump'].max():.3f}  interior_flags={len(res['flagged'])}  "
-          f"(f0_ratio={res['f0']['ratio']:.1f}x boundary-effect)")
+          f"qjump_max={res['qjump'].max():.3f}  interior_flags={len(res['flagged'])}"
+          + (f"  reject:{','.join(reject_reasons)}" if reject_reasons else ""))
     if args.quiet:
         return v
 
@@ -158,9 +171,12 @@ def do_report(path, args):
         bad = [t for (t, *_2) in res["flagged"]]
         print(f"  -> interior glitch at frame(s) {bad[:5]} -- physically-implausible reference, valid HARD "
               f"REJECT; re-generate (different seed) or --trim_range to before {min(bad)}.")
-    if res["jnorm_p10"] > 0.6:
-        print("  -> high p10 (never settles): persistently jerky reference. Decisive test = low-pass smooth "
-              "at SMPL source (stmc_smpl_smooth.py --smooth) -> re-retarget -> re-eval.")
+    if never_settles:
+        print(f"  -> NEVER-SETTLES (jnorm p10={res['jnorm_p10']:.2f}): over-agitated generation content, no "
+              f"stance phase. RESOLVED as not smoothing-fixable (the p10 floor is low-freq content, not "
+              f"jitter) -> GATE = reject-and-REGENERATE this STMC sample (do NOT trim/smooth).")
+    if gate == "ACCEPT":
+        print("  -> GATE=ACCEPT: settles to a stance phase, no impossible frame -> followable reference.")
     return v
 
 
@@ -209,6 +225,8 @@ def main():
     ap.add_argument("--rootang_thresh", type=float, default=10.0,
                     help="interior root angular-vel flag rad/s (even aggressive turning <2; 10 = impossible)")
     ap.add_argument("--jump_thresh", type=float, default=0.3, help="interior single-frame max joint jump (rad)")
+    ap.add_argument("--settle_thresh", type=float, default=0.5,
+                    help="GATE rejects if jnorm p10 exceeds this (never-settles). Calibrated n=7: pass ~0.3, fail ~0.78.")
     ap.add_argument("--frame0_ratio", type=float, default=1.8,
                     help="frame-0 transient if jnorm[0]/settled-median exceeds this")
     ap.add_argument("--frame0_floor", type=float, default=6.0,
