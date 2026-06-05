@@ -111,8 +111,12 @@ python fullbody/eval.py --motion_path STMC/loco_walk_turn_walk_0 ...
 - `bridge_stmc_to_amass.py` — STMC `_smpl.npz` → AMASS-style npz. `--stmc_npz` (single) or
   `--stmc_dir` (batch); stages a copy to `data/stmc_refs/` for cross-node eval.
 - `reference_sanity.py` — reference-quality check + cleaning on the GMR-retargeted cache npz. Reports a
-  per-clip `VERDICT` (CLEAN / FRAME0_TRANSIENT / INTERIOR_BLOWUP / BOTH) and can `--trim_lead`/`--trim_range`
-  to produce an FK-consistent cleaned reference. See **Reference sanity & cleaning** below.
+  per-clip `VERDICT` (CLEAN / FRAME0_TRANSIENT / INTERIOR_BLOWUP / BOTH), the `jnorm_p10` never-settles
+  correlate, and can `--trim_lead`/`--trim_range`. See **Reference sanity & cleaning** below.
+- `stmc_smpl_smooth.py` — localize + fix jerk at the **SMPL source** (before retargeting), the decisive
+  next experiment after the frame-0 hypothesis was falsified. `--report` measures source jerk (is the STMC
+  output itself jerky, or does GMR introduce it?); `--smooth` low-pass-filters poses (rotation-aware 6D) +
+  trans → new `_smooth_smpl.npz` to re-bridge/retarget/eval (no re-FK). See **Smoothing the source** below.
 - `timelines/loco_*.txt` — 4 scoped, in-repertoire locomotion timelines. STMC timeline syntax is
   one interval per line: `text # start_s # end_s # bodypart` (e.g. `legs`).
   - `loco_walk_forward` — single walk
@@ -250,3 +254,33 @@ reject-and-regenerate (the reference is genuinely non-physical — still valid).
 > The signal that actually *correlates* with failure is "the clip never settles" (jnorm p10 ≈ 0.78 for
 > fails vs ≈ 0.3 for passes) — but that's correlational, not a validated followability guard. `--trim`
 > and the `INTERIOR_BLOWUP` detector remain useful; the `FRAME0_TRANSIENT`→trim story does not.
+
+## Smoothing the source (`stmc_smpl_smooth.py`)
+
+After the frame-0 transient was falsified as the failure cause, the open question is **persistently jerky
+reference** (generation quality) vs **a real tracker edge**. The decisive test is to low-pass-smooth the
+reference and re-eval — but smoothing the robot `qpos` needs a mujoco re-FK to keep `xpos/site_xpos/cvel`
+consistent. This tool sidesteps that by smoothing at the **SMPL source**, *before* retargeting, so the
+normal GMR pass regenerates every derived array consistently.
+
+It also answers *where* the jerk is. Run `--report` on a failing clip's `<name>_smpl.npz` and a passing
+one: if the failing **source** is itself much jerkier (high pose-angular-speed p10, no quiet phases), the
+jerk is **generation**; if the source is smooth, **GMR's per-frame IK** introduced it (and smoothing at
+the source won't fully help — escalate to robot-level smoothing + re-FK).
+
+```bash
+# localize: compare source jerk of a fail vs a pass
+python stmc_smpl_smooth.py <stmc_gen>/loco_stress_sustained_left_0_smpl.npz
+python stmc_smpl_smooth.py <stmc_gen>/loco_stress_long_circle_0_smpl.npz
+
+# fix (if source is the culprit): low-pass, then re-run the normal pipeline on the smoothed source
+python stmc_smpl_smooth.py <...>_smpl.npz --smooth --cutoff_hz 4 --out <...>_smooth_smpl.npz
+python bridge_stmc_to_amass.py --stmc_npz <...>_smooth_smpl.npz --out_name loco_stress_sustained_left_smooth
+#   retarget (step 3) + eval (step 4) on STMC/loco_stress_sustained_left_smooth
+```
+
+Interpretation: smoothed clip now tracks ~0.99 ⇒ the failure was generation jerkiness (deployment fix =
+generate cleaner / smooth before retarget); still fails ⇒ a genuine tracker limit on jerky turning content
+(escalate to the tracker side). Poses are filtered in the continuous 6D rotation representation then
+re-orthonormalized, so the output is always a valid rotation; `--cutoff_hz` defaults to 4 Hz (locomotion
+is <~3 Hz, so this trims wobble while preserving gait — lower it to smooth more aggressively).

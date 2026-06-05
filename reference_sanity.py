@@ -98,8 +98,12 @@ def analyze(d, args):
             dom = int(np.argmax(np.abs(qvel[t])))
             flagged.append((t, reasons, dof_name(dom, jn), float(qvel[t, dom])))
 
+    # "never-settles" correlate (the signal that actually tracked failure in the stress test:
+    # fails have jnorm p10 ~0.78 vs ~0.3 for passing clips -- i.e. the clip never reaches a quiet phase)
+    jnorm_p10 = float(np.percentile(jnorm, 10)) if T else 0.0
+
     return {"T": T, "jnorm": jnorm, "rootang": rootang, "qjump": qjump,
-            "f0": f0, "flagged": flagged, "med_jnorm": med_jnorm}
+            "f0": f0, "flagged": flagged, "med_jnorm": med_jnorm, "jnorm_p10": jnorm_p10}
 
 
 def verdict(res):
@@ -125,9 +129,9 @@ def do_report(path, args):
 
     # one-line machine-greppable summary first (good for batch scans)
     print(f"[sanity] {name}: VERDICT={v}  T={T} ({T/freq:.1f}s)  "
-          f"f0_ratio={res['f0']['ratio']:.1f}x  rootang_max={res['rootang'].max():.2f}  "
+          f"jnorm_p10={res['jnorm_p10']:.2f}  rootang_max={res['rootang'].max():.2f}  "
           f"qjump_max={res['qjump'].max():.3f}  interior_flags={len(res['flagged'])}  "
-          f"(jnorm med={res['med_jnorm']:.2f} max={res['jnorm'].max():.2f})")
+          f"(f0_ratio={res['f0']['ratio']:.1f}x boundary-effect)")
     if args.quiet:
         return v
 
@@ -142,16 +146,21 @@ def do_report(path, args):
             print(f"    f{t:5d} ({t/freq:5.2f}s): {', '.join(reasons)}  dominant={dom}({dval:+.1f})")
         if len(res["flagged"]) > args.max_list:
             print(f"    ... +{len(res['flagged']) - args.max_list} more")
-    # actionable hint
-    if v in ("FRAME0_TRANSIENT", "BOTH") and f0["transient"]:
-        print(f"  -> frame-0 looks like the GMR qvel boundary artifact; try --trim_lead 3..5 and re-eval "
-              f"(if it then tracks ~0.99, the fail was a boundary transient, not the tracker).")
+    # never-settles correlate (the signal that actually tracked stress-test failure)
+    print(f"  never-settles: jnorm p10={res['jnorm_p10']:.2f}  "
+          f"(stress fails ~0.78, passes ~0.3 -> high p10 = persistently jerky, the real failure correlate)")
+    # actionable hints
+    if f0["transient"]:
+        print(f"  note: frame-0 transient present (ratio {f0['ratio']:.1f}x) but this is a near-universal "
+              f"GMR qvel BOUNDARY EFFECT -- FALSIFIED as a failure cause (a passing clip has a bigger one, "
+              f"and trimming it does NOT fix tracking). Not actionable.")
     if v in ("INTERIOR_BLOWUP", "BOTH"):
         bad = [t for (t, *_2) in res["flagged"]]
-        print(f"  -> interior glitch at frame(s) {bad[:5]} -- physically-implausible reference, cannot "
-              f"patch without FK; re-generate (different seed) or --trim_range to before {min(bad)}.")
-    if v == "CLEAN":
-        print("  -> followable reference (no boundary transient, no impossible interior frame).")
+        print(f"  -> interior glitch at frame(s) {bad[:5]} -- physically-implausible reference, valid HARD "
+              f"REJECT; re-generate (different seed) or --trim_range to before {min(bad)}.")
+    if res["jnorm_p10"] > 0.6:
+        print("  -> high p10 (never settles): persistently jerky reference. Decisive test = low-pass smooth "
+              "at SMPL source (stmc_smpl_smooth.py --smooth) -> re-retarget -> re-eval.")
     return v
 
 
