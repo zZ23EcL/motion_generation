@@ -1,0 +1,5 @@
+walking forward # 0.0 # 7.0 # legs
+turning to the left # 6.5 # 9.0 # legs
+walking forward # 8.5 # 15.0 # legs
+turning to the right # 14.5 # 17.0 # legs
+walking forward # 16.5 # 23.0 # legs

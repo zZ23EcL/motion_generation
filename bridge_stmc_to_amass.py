@@ -67,8 +67,18 @@ def bridge_one(stmc_npz, out_name, amass_root, stage_dir=None, verbose=True):
     assert trans.shape == (poses.shape[0], 3), f"trans shape {trans.shape} mismatch"
     fps = float(d["mocap_framerate"]) if "mocap_framerate" in d else 20.0
 
+    # GMR's loader (general_motion_retargeting.utils.smpl.load_smplh_file) only accepts the AMASS
+    # SMPL-H layout poses (T,156) = root(3)+body(63)+left_hand(45)+right_hand(45); on anything else it
+    # falls to a branch that needs explicit root_orient/pose_body keys and KeyErrors. STMC gives only
+    # root+body (66 = poses[:, :66]), which maps exactly to AMASS poses[:, :66]. Pad the 90 hand DOFs
+    # with zeros (flat/neutral hands -- irrelevant to the locomotion repertoire) to trigger the AMASS
+    # branch. poses[:, :66] is unchanged, so the non-GMR read_single_amass_motion path still works too.
+    T = poses.shape[0]
+    poses156 = np.zeros((T, 156), dtype=np.float32)
+    poses156[:, :66] = poses[:, :66]
+
     out_npz = {
-        "poses": poses,                         # (T,66) axis-angle, 22 joints
+        "poses": poses156,                      # (T,156) AMASS SMPL-H: root+body from STMC, hands=0
         "trans": trans,                         # (T,3)
         "betas": np.zeros(16, dtype=np.float32),  # neutral shape; GMR fits the robot body
         "gender": "neutral",

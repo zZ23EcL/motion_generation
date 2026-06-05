@@ -26,6 +26,14 @@ MuscleMimic's `read_single_amass_motion` reads an AMASS-style npz needing
 `use_fitted_shape=True` fit the robot body. The `mocap_framerate=20` tag is **mandatory** (GMR resamples
 to 30 fps from it; a wrong/missing tag desyncs speed and motion-phase by 1.5×).
 
+**One non-trivial format detail (learned on the first real GMR run):** the GMR retargeting path does
+*not* go through `read_single_amass_motion`; it uses `general_motion_retargeting.utils.smpl.load_smplh_file`,
+which only accepts the full **AMASS SMPL-H pose width of 156** (`root 3 + body 63 + left_hand 45 +
+right_hand 45`). Given bare `poses (T,66)` it falls to a branch that needs `root_orient`/`pose_body`
+keys and raises `KeyError: 'root_orient'`. So the bridge **zero-pads poses 66→156** (flat hands; hands
+are irrelevant to the locomotion repertoire). `poses[:, :66]` is untouched, so the non-GMR loader still
+works. This padding is the only real wiring the bridge does beyond betas/gender.
+
 ## Pipeline
 
 ```
@@ -53,7 +61,18 @@ uv sync --extra cuda --extra smpl --extra gmr
 
 # STMC: its own env (torch 2.0.1, smplx, joblib, hydra, pytorch-lightning).
 # Checkpoint dir: stmc/outputs/mdm-smpl_clip_smplrifke_humanml3d
+
+# SMPL-H body model for GMR. GMR forward-kinematics the source human, so it needs an SMPL-H model at
+#   $SMPL_MODEL_PATH  (default ~/.musclemimic/smpl)  named  SMPLH_NEUTRAL.pkl  (16-beta SMPL+H w/ MANO
+#   hand components, use_pca=False). STMC already ships a compatible one — just point GMR at it:
+mkdir -p ~/.musclemimic/smpl
+ln -sf <repo>/stmc/deps/smplh/SMPLH_NEUTRAL.pkl ~/.musclemimic/smpl/SMPLH_NEUTRAL.pkl
+export SMPL_MODEL_PATH=~/.musclemimic/smpl   # or run `musclemimic-set-smpl-model-path --path ...`
 ```
+
+> The `--extra cuda` is required for step 4 (MJX eval on GPU). On a box where only the smpl+gmr extras
+> were synced, JAX falls back to CPU (`jax.devices() == [CpuDevice]`); GMR retargeting (steps 1–3) still
+> works on CPU, but MJX physics eval will be unusably slow until jax-cuda is installed.
 
 > GMR comes from `general-motion-retargeting @ git+https://github.com/amathislab/gmr_plus.git`
 > (the `gmr` extra). The shared CPU cluster lacked it entirely — that's why this work moved local.
@@ -100,9 +119,77 @@ python fullbody/eval.py --motion_path STMC/loco_walk_turn_walk_0 ...
 
 ## Validated / not yet validated
 
-- ✅ STMC generation produces valid SMPL (8 s timeline → `poses (160, 66)`, root xy disp 5.33 m, no
-  ground penetration).
-- ✅ Bridge produces a correctly-typed AMASS npz (Δyaw ≈ +167° for walk→left-turn→walk, as expected).
-- ⚠️ **GMR retargeting step not yet run** (the cluster node had no GMR library). On the first local run,
-  scrutinize the retarget_visualize first frame for ground alignment — this is the one known wiring risk
-  (STMC's z=0 canonical frame vs GMR's `offset_to_ground` convention).
+- ✅ STMC generation produces valid SMPL (8 s timeline → `poses (160, 66)`, mocap_framerate=20).
+- ✅ Bridge produces a correctly-typed AMASS npz (now `poses (T,156)`, hands zero-padded — see format
+  note above).
+- ✅ **GMR retargeting validated locally** (2026-06-04, RTX 4090). `STMC/loco_walk_turn_walk_0` → robot
+  trajectory `(160, 89)` qpos, retarget IK error mean 1.9 cm / max 6.4 cm. Recorded playback:
+  `musclemimic/stmc_videos/myofullbody_retargeted/loco_walk_turn_walk_0.mp4`.
+- ✅ **Ground alignment (the one known wiring risk) is correct, across all 4 timelines.** With GMR
+  `offset_to_ground=False` on STMC's z=0-canonical data, frame-0 lowest foot **geom** sits ~+2 cm (on
+  floor) and the per-frame lowest geom averages ≈0 over each clip. No gross float/sink; only mild ≤5 cm
+  stance-contact noise typical of contact-free IK retargeting, which MJX contact resolves. Per-motion
+  (geom-level FK; pen% = frames >2 cm into floor; IK = mean per-site retarget error):
+
+  | motion | frames | f0 foot z | mean low-z | worst low-z | pen% | IK err | net turn | total turn |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | loco_walk_forward_0 | 120 | +2.4 cm | +1.3 cm | −1.9 cm | 0% | 2.0 cm | +37° | 134° |
+  | loco_walk_turn_walk_0 | 160 | +2.2 cm | +0.3 cm | −5.0 cm | 17% | 1.9 cm | −14° | 247° |
+  | loco_walk_circle_0 | 160 | +2.5 cm | +1.1 cm | −3.2 cm | 9% | 2.0 cm | **+153°** | 258° |
+  | loco_walk_turn_circle_0 | 200 | +2.2 cm | +1.0 cm | −3.8 cm | 9% | 1.9 cm | +4° | 174° |
+
+  Videos: `musclemimic/stmc_videos/myofullbody_retargeted/<motion>.mp4`.
+- ⚠️ **STMC locomotion samples wander rather than execute clean turn primitives.** `loco_walk_circle_0`
+  is the one with genuine sustained directed turning (net +153°). The others have high *total* curvature
+  (lots of |Δheading|) but small *net* turn — they meander/wobble, and the explicit "turning to the
+  left" segments don't yield clean net heading changes (diffusion RNG also differs from the cluster run
+  despite seed 1234). For the OOD yaw-drift test, `loco_walk_circle_0` is the cleanest sustained-turn
+  reference; the wandering clips are still valid continuous-locomotion OOD inputs.
+- ✅ **Step 4 (tracker eval) DONE — STMC locomotion tracks essentially perfectly.** mild_1p5
+  (`checkpoints/stage1_baseline_seed1_mild_1p5/checkpoint_12500`, env MjxMyoFullBody) evaluated on all 4
+  bridged+retargeted STMC motions (MJX/GPU, stochastic, eval_seed 0):
+
+  | motion | frames | coverage | early-term | root_yaw err | root_xyz err | reward_total |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | loco_walk_forward_0 | 392/393 | 0.997 | 0% | 0.050 | 0.511 | 1.030 |
+  | loco_walk_turn_walk_0 | 526/527 | 0.998 | 0% | 0.035 | 0.754 | 0.960 |
+  | loco_walk_circle_0 (+153°) | 526/527 | 0.998 | 0% | 0.027 | 0.455 | 1.003 |
+  | loco_walk_turn_circle_0 | 659/660 | 0.998 | 0% | 0.035 | 0.678 | 0.991 |
+
+  **All ~0.998 coverage, zero early terminations**, root-yaw error ~2–3° even on sustained turning. This
+  matches in-distribution (~0.99) and far exceeds the abandoned composite proxy (0.66): **the predicted
+  long-horizon yaw drift did not reproduce on faithful STMC output.** The scoped-STMC ↔ one-policy
+  text-to-motion link is validated. Eval command:
+  ```bash
+  env -u LD_LIBRARY_PATH SMPL_MODEL_PATH=~/.musclemimic/smpl .venv/bin/python fullbody/eval.py \
+      --path checkpoints/stage1_baseline_seed1_mild_1p5/checkpoint_12500 \
+      --motion_path STMC/loco_walk_circle_0 \
+      --evaluate_all --metrics --metrics_only --no_render --metrics_envs 8 --eval_seed 0
+  ```
+  (`env -u LD_LIBRARY_PATH` is required on this box so JAX uses its bundled CUDA wheels instead of the
+  system CUDA 12.8 that shadows them; `--evaluate_all` is required so eval uses the `--motion_path` env
+  rather than the config's 108-motion validation set.)
+
+- ✅ **Stress test DONE (2026-06-05) — yaw drift stays refuted; the failures are reference artifacts, not
+  drift.** 3 long/sharp multi-prompt timelines (`timelines/loco_stress_*.txt`, 15–23 s), same checkpoint,
+  eval_seed 0:
+
+  | motion | result | coverage | early-term | dies @frame | net turn | frame0 jnorm | reference artifact |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | loco_stress_long_circle_0 | **PASS** | 0.999 | 0% | — | **+469°** | 3.7 (normal) | none |
+  | loco_stress_sustained_left_0 | FAIL | 0.13 | 100% | ~152 | +51° | 10.8 | ~6 rad/s forearm-pronation spin at f0 |
+  | loco_stress_long_walk_turn_walk_0 | FAIL | 0.03 | 100% | ~46 | +197° | 11.1 | f0 forearm spin **+ 35.8 rad/s root blow-up @f252** |
+
+  **The discriminator is reference quality, not turn amount.** The PASSING motion has *by far the most*
+  net turning (+469° ≈ 1.3 loops, the heaviest sustained turn in the project) yet the *cleanest*
+  reference — it tracks at in-distribution quality. The two FAILS have *less* turning but start with a
+  physically-odd frame-0 transient (joint-vel norm ~11 vs 3.7, dominated by a ~6 rad/s `pro_sup_l/r`
+  forearm-pronation spin — a wrist-twist DOF, irrelevant to locomotion), and `long_walk_turn_walk` also
+  contains a gross GMR/STMC blow-up at frame 252 (root angular velocity 35.8 rad/s ≈ 2050°/s, a 0.70-rad
+  single-frame qpos jump) — physically impossible, an unfollowable retargeting artifact. Trajectory-export
+  rollout of the fast fail shows the policy diverging in **root translation** (loses balance off the poor
+  non-gait opening), not in a turning-specific way. ⇒ **the predicted sustained-turn yaw drift is refuted
+  even at the stress limit; the new failure mode is multi-prompt STMC DiffCollage timelines emitting
+  physically-implausible references — a generation/bridge-quality issue to clean up (velocity-sanity
+  filter / smooth the opening transient), NOT a tracker robustness gap and NOT yaw drift.** Logs:
+  `stress_eval_logs/*_seed0.log`.
