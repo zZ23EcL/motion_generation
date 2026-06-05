@@ -1,0 +1,124 @@
+INFO: [thread=MainThread] Failed to get flag value for EXPERIMENTAL_ORBAX_USE_DISTRIBUTED_PROCESS_ID.
+INFO:2026-06-05 20:47:59,133:jax._src.xla_bridge:822: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+INFO: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+INFO: [process=0][thread=MainThread] CheckpointManager init: checkpointers=None, item_names=('train_state', 'config', 'metadata'), item_handlers=None, handler_registry=None
+INFO: Deferred registration for item: "metrics". Adding handler `<orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x7f6dd15b1d90>` for item "metrics" and save args `<class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonSaveArgs'>` and restore args `<class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>` to `_handler_registry`.
+INFO: Initialized registry DefaultCheckpointHandlerRegistry({('metrics', <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonSaveArgs'>): <orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x7f6dd15b1d90>, ('metrics', <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>): <orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x7f6dd15b1d90>}).
+INFO: orbax-checkpoint version: 0.11.35
+INFO: [process=0][thread=MainThread] Using barrier_sync_fn: <function get_barrier_sync_fn.<locals>.<lambda> at 0x7f6dd15fda80> timeout: 1200 secs and primary_host=0 for async checkpoint writes
+INFO: Read Metadata={'item_handlers': {'config': 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler', 'metadata': 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler', 'train_state': 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardCheckpointHandler'}, 'metrics': {}, 'performance_metrics': {}, 'init_timestamp_nsecs': 1780106404853578997, 'commit_timestamp_nsecs': 1780106405801350503, 'custom_metadata': {}} from /home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5/checkpoint_11750/_CHECKPOINT_METADATA
+INFO: Missing metrics for step 11750
+INFO: Found 10 checkpoint steps in /home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5
+INFO: [process=0][thread=MainThread] CheckpointManager created,  primary_host=0, CheckpointManagerOptions=CheckpointManagerOptions(save_interval_steps=1, max_to_keep=5, keep_time_interval=None, keep_period=None, should_keep_fn=None, best_fn=None, best_mode='max', keep_checkpoints_without_metrics=True, step_prefix='checkpoint', step_format_fixed_length=None, step_name_format=None, create=True, cleanup_tmp_directories=False, save_on_steps=frozenset(), single_host_load_and_broadcast=False, todelete_subdir=None, todelete_full_path=None, enable_background_delete=False, read_only=False, enable_async_checkpointing=True, async_options=None, multiprocessing_options=MultiprocessingOptions(primary_host=0, active_processes=None, barrier_sync_key_prefix=None), should_save_fn=None, file_options=FileOptions(path_permission_mode=None), save_root_metadata=True, temporary_path_class=None, save_decision_policy=None, preservation_policy=None, prevent_write_metrics=False, enable_should_save_is_saving_in_progress_check=True, enable_per_process_directory_creation=False, lightweight_initialize=False), root_directory=/home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5: <orbax.checkpoint.checkpoint_manager.CheckpointManager object at 0x7f6de9f564d0>
+INFO: [process=0] [sync] Started load checkpoint @ /home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5/checkpoint_12500.
+INFO: Restoring checkpoint from /home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5/checkpoint_12500.
+INFO: [process=0] [sync] Finished blocking load in 0.00 seconds. Continuing load @ /home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5/checkpoint_12500.
+INFO: No entry found in handler registry for item: config and args with type: <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>. Falling back to global handler registry.
+INFO: Deferred registration for item: "config". Adding handler `<orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x7f6dd1970f50>` for item "config" and save args `<class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonSaveArgs'>` and restore args `<class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>` to `_handler_registry`.
+INFO: No entry found in handler registry for item: metadata and args with type: <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>. Falling back to global handler registry.
+INFO: Deferred registration for item: "metadata". Adding handler `<orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x7f6dbb110c90>` for item "metadata" and save args `<class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonSaveArgs'>` and restore args `<class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>` to `_handler_registry`.
+INFO: No entry found in handler registry for item: train_state and args with type: <class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardRestoreArgs'>. Falling back to global handler registry.
+INFO: save_device_host_concurrent_bytes=None
+INFO: Created BasePyTreeCheckpointHandler: use_ocdbt=True, use_zarr3=False, pytree_metadata_options=PyTreeMetadataOptions(support_rich_types=False), array_metadata_store=<orbax.checkpoint._src.metadata.array_metadata_store.Store object at 0x7f6e44b75650>, enable_pinned_host_transfer=True, save_concurrent_bytes: 96000000000 (89.4 GiB), restore_concurrent_bytes: 96000000000 (89.4 GiB)
+INFO: Deferred registration for item: "train_state". Adding handler `<orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardCheckpointHandler object at 0x7f6dbb110110>` for item "train_state" and save args `<class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardSaveArgs'>` and restore args `<class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardRestoreArgs'>` to `_handler_registry`.
+INFO: [process=0] /jax/orbax/read/worker/io/requested throughput: 1.760 GiB/s (total gbytes: 762.5 MiB) (time elapsed: 0.42313146591186523 s) (per-host)
+INFO: [process=0] /jax/checkpoint/read/gbytes_per_sec: 1.675 GiB/s (total gbytes: 762.5 MiB) (time elapsed: 0.4445619583129883 s) (per-host)
+INFO: [process=0] [sync] Finished load in 0.49 seconds @ /home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5/checkpoint_12500
+INFO: {'step': 12500, 'event_type': 'restore', 'directory': '/home/maker/Project/musclemimic/checkpoints/stage1_baseline_seed1_mild_1p5', 'checkpointer_start_time': 1780663679.2366192, 'checkpointer_duration_secs': 0.48720216751098633, 'checkpoint_manager_start_time': 1780663679.2365918, 'checkpoint_manager_duration_secs': 0.4872312545776367}
+=== RESTORING TRAINING CONFIGURATION ===
+Restored training environment configuration:
+   Environment: MjxMyoFullBody
+   Goal type: GoalTrajMimic
+   Goal params: {'n_step_lookahead': 5, 'n_step_stride': 20, 'upper_body_xml_name': 'torso', 'enable_motion_phase': True, 'use_concise_lookahead': True, 'sites_for_mimic': ['pelvis_mimic', 'upper_body_mimic', 'head_mimic', 'left_shoulder_mimic', 'left_elbow_mimic', 'left_hand_mimic', 'right_shoulder_mimic', 'right_elbow_mimic', 'right_hand_mimic', 'left_hip_mimic', 'left_knee_mimic', 'left_ankle_mimic', 'left_toes_mimic', 'right_hip_mimic', 'right_knee_mimic', 'right_ankle_mimic', 'right_toes_mimic']}
+
+=== TRAINING TEMPORAL CONFIGURATION ===
+   Training timestep: 0.002
+   Training n_substeps: 5
+   Training control_dt: 0.01
+
+Configuring MyoFullBody evaluation:
+   Headless mode: using training goal class for efficiency
+   Training goal_type: GoalTrajMimic
+   Evaluation goal_type: GoalTrajMimic
+   Training sites_for_mimic: ['pelvis_mimic', 'upper_body_mimic', 'head_mimic', 'left_shoulder_mimic', 'left_elbow_mimic', 'left_hand_mimic', 'right_shoulder_mimic', 'right_elbow_mimic', 'right_hand_mimic', 'left_hip_mimic', 'left_knee_mimic', 'left_ankle_mimic', 'left_toes_mimic', 'right_hip_mimic', 'right_knee_mimic', 'right_ankle_mimic', 'right_toes_mimic']
+   Evaluation headless mode: True
+   Enhanced visualization geometries: Default
+
+Evaluating all trajectories in the dataset for validation metrics.
+Motion path override: ['STMC/loco_stress_sustained_left_0_clean']
+Using validation terminal state configuration for evaluation
+INFO: [MyoFullBody] nconmax=96 (per-env), naconmax=960 (total), njmax=768
+INFO: [MyoFullBody] Keeping all contacts enabled for Warp backend
+Warp 1.10.0 initialized:
+   CUDA Toolkit 12.8, Driver 12.8
+   Devices:
+     "cpu"      : "x86_64"
+     "cuda:0"   : "NVIDIA GeForce RTX 4090" (47 GiB, sm_89, mempool enabled)
+   Kernel cache:
+     /home/maker/.cache/warp/1.10.0
+Using Warp backend (version 1.10.0)
+Module mujoco.mjx.third_party.mujoco_warp._src.smooth 4d4b71e load on device 'cuda:0' took 6.20 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.collision_driver e72006d load on device 'cuda:0' took 0.56 ms  (cached)
+Module _nxn_broadphase__locals__kernel_5e1f554f 5e1f554 load on device 'cuda:0' took 0.22 ms  (cached)
+Module ccd_kernel_builder__locals__ccd_kernel_2c628b9a 2c628b9 load on device 'cuda:0' took 0.89 ms  (cached)
+Module ccd_kernel_builder__locals__ccd_kernel_4064143f 4064143 load on device 'cuda:0' took 0.74 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.collision_primitive._create_narrowphase_kernel 056a1d7 load on device 'cuda:0' took 0.33 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.constraint 4a3aa8f load on device 'cuda:0' took 1.00 ms  (cached)
+Module _actuator_velocity__locals__actuator_velocity_52862787 e791750 load on device 'cuda:0' took 0.21 ms  (cached)
+Module _tendon_velocity__locals__tendon_velocity_a7e3a62b ada82e8 load on device 'cuda:0' took 0.20 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.passive fc4f8e1 load on device 'cuda:0' took 0.46 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.sensor 54dd51b load on device 'cuda:0' took 1.19 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.forward a88f545 load on device 'cuda:0' took 0.45 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.support 769a44d load on device 'cuda:0' took 0.18 ms  (cached)
+Module mujoco.mjx.third_party.mujoco_warp._src.solver 1699532 load on device 'cuda:0' took 0.81 ms  (cached)
+Module mul_m_sparse_diag__locals___mul_m_sparse_diag_afb6a044 afb6a04 load on device 'cuda:0' took 0.16 ms  (cached)
+Module mul_m_sparse_ij__locals___mul_m_sparse_ij_6f8c9e4c 6f8c9e4 load on device 'cuda:0' took 0.16 ms  (cached)
+Module update_constraint_gauss_cost__locals__kernel_3c00ed89 3c00ed8 load on device 'cuda:0' took 0.18 ms  (cached)
+Module update_gradient_JTDAJ_sparse_tiled__locals__kernel_37f6d102 68e9350 load on device 'cuda:0' took 24.89 ms  (cached)
+Module update_gradient_cholesky_blocked__locals__kernel_ddf8d1b3 4ec5a3d load on device 'cuda:0' took 103.37 ms  (cached)
+Module linesearch_jv_fused__locals__kernel_4cb19a21 4cb19a2 load on device 'cuda:0' took 0.25 ms  (cached)
+INFO: [MuscleMimic AMASS Retargeting Pipeline] Dataset 1/1: Found existing retargeted motion file at /home/maker/.musclemimic/caches/AMASS/MyoFullBody/gmr/STMC/loco_stress_sustained_left_0_clean.npz. Loading ...
+INFO: [MuscleMimic AMASS Retargeting Pipeline] Trajectory data loaded!
+[TrajectoryHandler] Skipping site addition for muscle model - trajectory has 17 mimic sites, model has 2038 total sites
+[TrajectoryHandler] traj_dt=0.010000 (100.0Hz), control_dt=0.010000 (100.0Hz)
+[TrajectoryHandler] Skipping site addition for muscle model - trajectory has 17 mimic sites, model has 2038 total sites
+[TrajectoryHandler] traj_dt=0.010000 (100.0Hz), control_dt=0.010000 (100.0Hz)
+INFO: [ppo] roll out size=163840, minibatch size=1280, grad_steps=128, utd=0.0008, sample_reuse=1x, unrolls/1M=6.1, grad_steps/1M=781.2
+
+=== ENVIRONMENT VERIFICATION ===
+   Expected control_dt: 0.010000
+   Actual environment dt: 0.010000
+Environment temporal parameters correctly configured
+   Trajectory frequency: 100.0 Hz
+   Required frequency: 100.0 Hz
+   Sync ratio: 1.000
+Trajectory synchronized with policy - ghost robot will move correctly
+MJX evaluate_all: 1 trajectories, batch_size=1, max_traj_len=1083
+Module mujoco.mjx.warp.ffi 441c945 load on device 'cuda:0' took 0.39 ms  (cached)
+  traj 1/1: len=164, return=56.3912  EARLY at 164/1083
+Completed 1 trajectories, 1 early terminations
+
+=== VALIDATION METRICS ===
+val_early_termination_count: 1.000000
+val_early_termination_rate: 1.000000
+val_err_joint_pos: 0.354779
+val_err_joint_vel: 0.901851
+val_err_root_xyz: 0.454950
+val_err_root_yaw: 0.789971
+val_err_rpos: 0.153249
+val_err_site_abs: 0.852893
+val_frame_coverage: 0.151431
+val_mean_episode_length: 164.000000
+val_mean_episode_return: 56.391171
+val_penalty_activation_energy: -0.000005
+val_penalty_total: -0.025706
+val_reward_qpos: 0.023085
+val_reward_qvel: 0.277993
+val_reward_root_pos: 0.382034
+val_reward_root_vel: 0.027538
+val_reward_rpos: 0.178182
+val_reward_rquat: 0.044479
+val_reward_rvel_lin: 0.948070
+val_reward_rvel_rot: 0.657761
+val_reward_total: 0.343849
+val_total_frame: 1083.000000

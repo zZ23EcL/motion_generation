@@ -46,36 +46,45 @@ distribution.
   the tracker's repertoire. Caveats: single eval_seed, short clips (4–7 s), and these STMC samples wander
   but don't push very aggressive sustained turns — longer/sharper sequences could still expose drift.
 
-- **STRESS TEST RESULT (2026-06-05): yaw drift stays REFUTED under heavy sustained turning; the failures
-  that appear are STMC/GMR reference-quality artifacts, NOT the hypothesized turning drift.** Built 3
+- **STRESS TEST RESULT (2026-06-05): yaw drift stays REFUTED under heavy sustained turning. Two
+  multi-prompt clips fail, but the cause is NOT yaw drift, NOT a frame-0 transient, and NOT a single
+  identifiable artifact — it stays OPEN (best read: persistently jerky low-quality references).** Built 3
   long/sharp multi-prompt timelines (15–23 s) and eval'd mild_1p5 `checkpoint_12500` (eval_seed 0):
   - `loco_stress_long_circle_0` (3 chained "walking in a circle", **net +469° ≈ 1.3 loops, 14.6 s**):
     **PASS — coverage 0.999, 0 early-term, root_yaw 0.045 rad.** This is the *most* sustained turning in
     the whole project and it tracks at in-distribution quality. ⇒ sustained-turn yaw drift is refuted even
-    at the stress limit.
+    at the stress limit. **This is the solid, load-bearing result.**
   - `loco_stress_sustained_left_0` (walk + 3×"turning left" + walk): **FAIL, early-term, coverage 0.13,
     dies ~frame 152.**
   - `loco_stress_long_walk_turn_walk_0` (walk7s+turnL+walk7s+turnR+walk7s): **FAIL, coverage 0.03, dies
     ~frame 46.**
-  - **Why the failures are NOT yaw drift (key discriminator):** the PASSING motion has *by far the most*
-    net turning (+469°) yet the *best* reference quality; the two FAILS have *less* turning (+51°, +197°)
-    but *bad* reference quality. Failure axis = reference quality, not turn amount. Both fails start with a
-    physically-odd frame-0 transient: joint-vel norm **~11 rad/s vs 3.7** for the passing motion, dominated
-    by a **~6 rad/s `pro_sup_l/r` forearm-pronation spin** (a wrist-twist DOF, irrelevant to locomotion).
-    `long_walk_turn_walk` additionally contains a **gross GMR/STMC blow-up at frame 252: root angular
-    velocity 35.8 rad/s (~2050°/s) and a 0.70-rad single-frame qpos jump** — physically impossible, an
-    unambiguous retargeting artifact (no muscle system can follow it). Trajectory-export rollout of the
-    fast fail shows the policy diverging mainly in **root translation** (drifts ~0.9 m from a near-static
-    reference over 0.67 s, i.e. loses balance off a poor non-gait intro), consistent with an unfollowable
-    reference, not a turning-specific instability.
-  - **Conclusion:** the faithful-test verdict holds and is *strengthened* — clean scoped-STMC locomotion
-    (incl. the heaviest sustained turn) tracks at ~0.99. The new failure mode is **multi-prompt STMC
-    DiffCollage timelines producing physically-implausible reference artifacts** (frame-0 velocity
-    transients + occasional mid-clip blow-ups), which is a **generation/bridge-quality** problem to clean
-    up, NOT a tracker robustness gap to train against, and NOT the predicted yaw drift. Caveat: single
-    eval_seed; the cleanest separation (artifact vs "tracker can't recover from awkward near-static starts")
-    would need a de-artifacted re-gen, but the references demonstrably contain non-physical content so they
-    aren't a valid robustness probe as-is. Logs: `musclemimic/stress_eval_logs/*_seed0.log`.
+  - **Not yaw drift / not turn-amount:** the PASSING motion has *by far the most* net turning (+469°); the
+    two FAILS turn *less* (+51°, +197°). Failure does not track turn amount.
+  - **The frame-0 "artifact" hypothesis was tested and FALSIFIED.** Both fails open with a high-velocity
+    transient (joint-vel norm ~11 vs ~3.7, dominated by a ~6 rad/s `pro_sup_l/r` forearm-pronation spin),
+    and it looked like the cause. But: (1) the *passing* `loco_walk_forward_0` has an even larger frame-0
+    transient (jnorm[0]/settled ratio 23.6×) and tracks fine — so the transient is a near-universal GMR
+    qvel **boundary effect, not causal**; (2) directly trimming the opening off `sustained_left` (cache
+    `..._clean.npz`, `reference_sanity.py --trim_lead 44`; frame-0 jnorm now 0.90, VERDICT=CLEAN) and
+    re-eval'ing **still FAILS** (dies 164/1083, coverage 0.15). ⇒ the opening transient is **not** why
+    these clips fail.
+  - **What the failures actually look like:** `sustained_left`'s death region (frames ~120–220) has **no
+    impossible frame** — feet on ground (lowest geom z ≈ 0, no penetration/float), root z 0.84–0.92
+    (slightly crouched), moderate velocities — but it is **persistently jerky and never settles**: root
+    angular vel oscillates 0.2↔2.4 rad/s frame-to-frame and jnorm never drops to a quiet stance phase
+    (its jnorm p10 ≈ 0.78 vs ≈ 0.3 for passing clips). This is the "STMC samples wander/wobble" quality
+    issue, i.e. low-quality *throughout*, not one bad frame. `long_walk_turn_walk` DOES contain one genuine
+    physically-impossible interior blow-up (frames 249–256, root_wz → 35.8 rad/s, 0.38-rad qpos jump), but
+    it **dies at frame 46, before reaching it**, so even that hard artifact is not the proximate cause.
+  - **Honest conclusion:** the faithful-test verdict holds and is strengthened (clean scoped locomotion
+    incl. the heaviest sustained turn tracks ~0.99; yaw drift refuted). **Why the 2 multi-prompt clips fail
+    is unresolved** — best current read is *persistently jerky, never-settling, low-quality multi-prompt
+    STMC references* sitting at/just past the tracker's comfort zone (partly generation quality, possibly
+    partly a tracker edge). It is NOT yaw drift and NOT the frame-0 transient. To separate "reference
+    jerkiness" from "tracker gap," the next decisive test is to **low-pass-smooth the reference (needs
+    re-FK so xpos/site_xpos stay consistent) and re-eval** — if it then tracks, it's generation quality; if
+    not, a real tracker limit. Caveat: single eval_seed. Logs: `musclemimic/stress_eval_logs/*_seed0.log`,
+    `motion_generation/stress_eval_clean.log`.
 
 ## Bridge facts (so the format layer is "free")
 
@@ -131,19 +140,23 @@ AMASS SMPL-H width 156 (root3+body63+lhand45+rhand45) and `KeyError: 'root_orien
   primary question ("does faithful scoped-STMC locomotion track?") is answered: **yes.**
 
 - Stress test ✅ DONE (2026-06-05). 3 long/sharp multi-prompt timelines built + eval'd. Yaw drift stays
-  refuted (`long_circle` +469° passes at 0.999); the 2 fails are STMC/GMR reference artifacts, not drift.
-  See "STRESS TEST RESULT" in Key findings. New timelines: `timelines/loco_stress_*.txt`.
+  refuted (`long_circle` +469° passes at 0.999). 2 multi-prompt clips fail, but the frame-0-transient
+  artifact hypothesis was **tested and falsified** (trim didn't fix it; a passing clip has the same
+  transient) — the failure cause is **OPEN**. See "STRESS TEST RESULT" in Key findings. New timelines:
+  `timelines/loco_stress_*.txt`; new tool `reference_sanity.py`.
 
 **What's left / where to push next:**
-1. **(if pursuing the fails) De-artifact and re-gen the 2 failing timelines** to separate "garbage
-   reference" from "tracker can't recover from awkward starts": clip/clean the frame-0 velocity transient
-   (the ~6 rad/s `pro_sup` forearm spin + jnorm~11 opening), drop the frame-252 blow-up, re-bridge,
-   re-retarget, re-eval. If the cleaned versions track ~0.99, the fails were pure generation artifacts
-   (most likely). Also worth: multi-`--eval_seed` to confirm determinism (single seed so far).
-2. **Generation-side fix (the real lever now):** the failure mode is multi-prompt STMC DiffCollage
-   timelines emitting physically-implausible references. Add a bridge-level sanity filter / clamp on
-   reference velocity (flag frames with root-ang-vel ≫ a few rad/s or jnorm ≫ ~8, smooth the opening
-   transient) so scoped-STMC deployment never feeds the tracker an unfollowable clip. NOT seam smoothing,
-   NOT training against these artifacts.
+1. **Decisive next experiment — smooth the reference, not trim it.** The opening-trim test already ruled
+   out the frame-0 transient as the cause. The remaining open question is "persistently jerky reference
+   (generation quality)" vs "genuine tracker gap on jerky turns". Test it by **low-pass-filtering the
+   reference qpos and re-running FK** (needs mujoco so xpos/site_xpos/cvel stay consistent — a plain
+   `reference_sanity.py --trim` won't do it), then re-eval `sustained_left`. Tracks ~0.99 ⇒ generation
+   jerkiness; still fails ⇒ real tracker limit. Also worth: multi-`--eval_seed` (single seed so far).
+2. **`reference_sanity.py` discriminator needs a rethink.** Its `FRAME0_TRANSIENT` flag over-fires
+   (`loco_walk_forward_0` is flagged but PASSES) and the trim it recommends does NOT make `sustained_left`
+   track — so "FRAME0_TRANSIENT → auto-trim-then-track" is not a valid deployment policy. The signal that
+   actually *correlates* with failure is "never settles" (jnorm p10 ≈ 0.78 for fails vs ≈ 0.3 for passes;
+   equivalently the opening-window median jnorm ~5.3 vs ~0.44) — but that's correlational, mechanism still
+   open. `INTERIOR_BLOWUP` (the f249 root_wz=35.8 blow-up) is still a valid hard-reject signal.
 3. The composite proxy can now be formally retired in the writeup — both the faithful test and the stress
    test refute its 0.66 / yaw-drift pessimism (the heaviest sustained turn, +469°, tracks at 0.999).

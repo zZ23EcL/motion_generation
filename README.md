@@ -173,29 +173,33 @@ python fullbody/eval.py --motion_path STMC/loco_walk_turn_walk_0 ...
   system CUDA 12.8 that shadows them; `--evaluate_all` is required so eval uses the `--motion_path` env
   rather than the config's 108-motion validation set.)
 
-- ✅ **Stress test DONE (2026-06-05) — yaw drift stays refuted; the failures are reference artifacts, not
-  drift.** 3 long/sharp multi-prompt timelines (`timelines/loco_stress_*.txt`, 15–23 s), same checkpoint,
-  eval_seed 0:
+- ✅ **Stress test DONE (2026-06-05) — yaw drift stays refuted; the 2 failures are NOT yaw drift and NOT a
+  frame-0 artifact (that hypothesis was tested and falsified) — their cause is still open.** 3 long/sharp
+  multi-prompt timelines (`timelines/loco_stress_*.txt`, 15–23 s), same checkpoint, eval_seed 0:
 
-  | motion | result | coverage | early-term | dies @frame | net turn | frame0 jnorm | reference artifact |
-  | --- | --- | --- | --- | --- | --- | --- | --- |
-  | loco_stress_long_circle_0 | **PASS** | 0.999 | 0% | — | **+469°** | 3.7 (normal) | none |
-  | loco_stress_sustained_left_0 | FAIL | 0.13 | 100% | ~152 | +51° | 10.8 | ~6 rad/s forearm-pronation spin at f0 |
-  | loco_stress_long_walk_turn_walk_0 | FAIL | 0.03 | 100% | ~46 | +197° | 11.1 | f0 forearm spin **+ 35.8 rad/s root blow-up @f252** |
+  | motion | result | coverage | early-term | dies @frame | net turn | reference signature |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | loco_stress_long_circle_0 | **PASS** | 0.999 | 0% | — | **+469°** | clean (jnorm settles to quiet stance) |
+  | loco_stress_sustained_left_0 | FAIL | 0.13 | 100% | ~152 | +51° | persistently jerky, never settles; no impossible frame |
+  | loco_stress_long_walk_turn_walk_0 | FAIL | 0.03 | 100% | ~46 | +197° | jerky + a true interior blow-up @f249–256 (but dies before it) |
 
-  **The discriminator is reference quality, not turn amount.** The PASSING motion has *by far the most*
-  net turning (+469° ≈ 1.3 loops, the heaviest sustained turn in the project) yet the *cleanest*
-  reference — it tracks at in-distribution quality. The two FAILS have *less* turning but start with a
-  physically-odd frame-0 transient (joint-vel norm ~11 vs 3.7, dominated by a ~6 rad/s `pro_sup_l/r`
-  forearm-pronation spin — a wrist-twist DOF, irrelevant to locomotion), and `long_walk_turn_walk` also
-  contains a gross GMR/STMC blow-up at frame 252 (root angular velocity 35.8 rad/s ≈ 2050°/s, a 0.70-rad
-  single-frame qpos jump) — physically impossible, an unfollowable retargeting artifact. Trajectory-export
-  rollout of the fast fail shows the policy diverging in **root translation** (loses balance off the poor
-  non-gait opening), not in a turning-specific way. ⇒ **the predicted sustained-turn yaw drift is refuted
-  even at the stress limit; the new failure mode is multi-prompt STMC DiffCollage timelines emitting
-  physically-implausible references — a generation/bridge-quality issue to clean up (velocity-sanity
-  filter / smooth the opening transient), NOT a tracker robustness gap and NOT yaw drift.** Logs:
-  `stress_eval_logs/*_seed0.log`.
+  **Not yaw drift, not turn amount:** the PASSING motion has *by far the most* net turning (+469° ≈ 1.3
+  loops, the heaviest sustained turn in the project) yet tracks at in-distribution quality; the two FAILS
+  turn *less*. **The frame-0 transient is not the cause** (it looked like it — both fails open with a
+  ~6 rad/s `pro_sup_l/r` forearm-pronation spin, joint-vel norm ~11 vs ~3.7 — but two checks falsify it):
+  (1) the *passing* `loco_walk_forward_0` has an even larger frame-0 transient (ratio 23.6×) and tracks
+  fine, so it's a near-universal GMR qvel **boundary effect**; (2) trimming the opening off `sustained_left`
+  (`reference_sanity.py --trim_lead 44`, frame-0 jnorm → 0.90, VERDICT CLEAN) and re-eval'ing **still
+  fails** (164/1083, coverage 0.15). What the fails actually look like: `sustained_left`'s death region has
+  no impossible frame (feet on ground, root z 0.84–0.92) but is **persistently jerky and never settles**
+  (root-ang-vel oscillating 0.2↔2.4 rad/s; jnorm p10 ≈ 0.78 vs ≈ 0.3 for passing clips) — the "STMC
+  samples wander/wobble" quality issue, low-quality *throughout*. `long_walk_turn_walk` does contain one
+  genuine physically-impossible interior blow-up (f249–256, root_wz → 35.8 rad/s) but dies at f46 before
+  reaching it. ⇒ **the predicted sustained-turn yaw drift is refuted even at the stress limit (the solid
+  result); why the 2 multi-prompt clips fail is open — best read is persistently jerky low-quality
+  references, partly generation quality and possibly partly a tracker edge.** Decisive next test:
+  low-pass-smooth the reference (with re-FK) and re-eval — tracks ⇒ generation jerkiness; fails ⇒ tracker
+  gap. Logs: `stress_eval_logs/*_seed0.log`, `stress_eval_clean.log`.
 
 ## Reference sanity & cleaning (`reference_sanity.py`)
 
@@ -209,9 +213,10 @@ It reads the robot-level cache npz directly (no GMR / no mujoco needed):
 **Two independent discriminators** (absolute joint-vel norm is *not* one — normal MyoFullBody gait
 legitimately spikes jnorm to ~13 during knee swing, so it's reported for info only):
 - **frame-0 transient** — `jnorm[0] / settled-median` above `--frame0_ratio` (1.8) *and* an absolute
-  floor `--frame0_floor` (6). This is the **GMR qvel boundary artifact**: verified universal across all 4
-  hard-cut composites too (ratio 5–34×, dominated by upper-body `shoulder*/elv_angle` DOFs), i.e. it is a
-  retargeting boundary effect, not STMC content — so it is fixable by trimming a few opening frames.
+  floor `--frame0_floor` (6). This is a near-universal **GMR qvel boundary artifact** (also present on the
+  hard-cut composites, ratio 5–34×, dominated by upper-body `shoulder*/elv_angle` DOFs) — and trimming
+  *does* remove it from the cache. **But note (see Correction below): removing it does NOT fix tracking**,
+  so this flag is a boundary-effect detector, not a failure predictor.
 - **interior blow-up** — root angular-vel `> --rootang_thresh` (10 rad/s; gait/turning is <2, the observed
   glitch was 35.8) **or** single-frame joint jump `> --jump_thresh` (0.3 rad). Physically-impossible
   reference; cannot be patched without re-FK, so re-generate or trim past it.
@@ -235,5 +240,13 @@ python reference_sanity.py <cache>.npz --trim_lead 5 \
 consistently and fixes `split_points`, so the trimmed cache stays FK-consistent and is directly evaluable.
 
 **Intended use of the verdict for scoped-STMC deployment:** treat `INTERIOR_BLOWUP`/`BOTH` clips as
-reject-and-regenerate (the reference is non-physical); treat `FRAME0_TRANSIENT` as auto-trim-then-track.
-This is the input sanity guard the stress test pointed at — *not* tracker retraining.
+reject-and-regenerate (the reference is genuinely non-physical — still valid).
+
+> ⚠️ **Correction (2026-06-05, after testing):** the `FRAME0_TRANSIENT` flag turned out **not** to be a
+> useful failure predictor and "auto-trim-then-track" does **not** work. The passing `loco_walk_forward_0`
+> is flagged `FRAME0_TRANSIENT` (ratio 23.6×) yet tracks fine, and trimming the opening off the failing
+> `loco_stress_sustained_left_0` (`--trim_lead 44`, frame-0 now CLEAN) **still fails** on re-eval. The
+> frame-0 transient is a near-universal GMR qvel boundary effect, not the cause of the stress failures.
+> The signal that actually *correlates* with failure is "the clip never settles" (jnorm p10 ≈ 0.78 for
+> fails vs ≈ 0.3 for passes) — but that's correlational, not a validated followability guard. `--trim`
+> and the `INTERIOR_BLOWUP` detector remain useful; the `FRAME0_TRANSIENT`→trim story does not.
