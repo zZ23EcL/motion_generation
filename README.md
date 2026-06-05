@@ -110,6 +110,9 @@ python fullbody/eval.py --motion_path STMC/loco_walk_turn_walk_0 ...
 
 - `bridge_stmc_to_amass.py` — STMC `_smpl.npz` → AMASS-style npz. `--stmc_npz` (single) or
   `--stmc_dir` (batch); stages a copy to `data/stmc_refs/` for cross-node eval.
+- `reference_sanity.py` — reference-quality check + cleaning on the GMR-retargeted cache npz. Reports a
+  per-clip `VERDICT` (CLEAN / FRAME0_TRANSIENT / INTERIOR_BLOWUP / BOTH) and can `--trim_lead`/`--trim_range`
+  to produce an FK-consistent cleaned reference. See **Reference sanity & cleaning** below.
 - `timelines/loco_*.txt` — 4 scoped, in-repertoire locomotion timelines. STMC timeline syntax is
   one interval per line: `text # start_s # end_s # bodypart` (e.g. `legs`).
   - `loco_walk_forward` — single walk
@@ -193,3 +196,44 @@ python fullbody/eval.py --motion_path STMC/loco_walk_turn_walk_0 ...
   physically-implausible references — a generation/bridge-quality issue to clean up (velocity-sanity
   filter / smooth the opening transient), NOT a tracker robustness gap and NOT yaw drift.** Logs:
   `stress_eval_logs/*_seed0.log`.
+
+## Reference sanity & cleaning (`reference_sanity.py`)
+
+Diagnose and clean the GMR-retargeted reference *before* blaming the tracker. Built to resolve the two
+stress-test failure signatures (frame-0 velocity transient; mid-clip blow-up) and to serve as a
+deployment guard (is a generated reference physically followable?).
+
+It reads the robot-level cache npz directly (no GMR / no mujoco needed):
+`~/.musclemimic/caches/AMASS/MyoFullBody/gmr/STMC/<name>.npz`.
+
+**Two independent discriminators** (absolute joint-vel norm is *not* one — normal MyoFullBody gait
+legitimately spikes jnorm to ~13 during knee swing, so it's reported for info only):
+- **frame-0 transient** — `jnorm[0] / settled-median` above `--frame0_ratio` (1.8) *and* an absolute
+  floor `--frame0_floor` (6). This is the **GMR qvel boundary artifact**: verified universal across all 4
+  hard-cut composites too (ratio 5–34×, dominated by upper-body `shoulder*/elv_angle` DOFs), i.e. it is a
+  retargeting boundary effect, not STMC content — so it is fixable by trimming a few opening frames.
+- **interior blow-up** — root angular-vel `> --rootang_thresh` (10 rad/s; gait/turning is <2, the observed
+  glitch was 35.8) **or** single-frame joint jump `> --jump_thresh` (0.3 rad). Physically-impossible
+  reference; cannot be patched without re-FK, so re-generate or trim past it.
+
+```bash
+# report one motion
+python reference_sanity.py ~/.musclemimic/caches/AMASS/MyoFullBody/gmr/STMC/loco_stress_sustained_left_0.npz
+
+# batch artifact-rate scan (how often does multi-prompt STMC emit an unfollowable ref?)
+for f in ~/.musclemimic/caches/AMASS/MyoFullBody/gmr/STMC/*.npz; do
+    python reference_sanity.py "$f" --quiet
+done
+
+# test the frame-0-transient hypothesis on a failing clip: trim the opening, re-cache, re-eval
+python reference_sanity.py <cache>.npz --trim_lead 5 \
+    --out ~/.musclemimic/caches/AMASS/MyoFullBody/gmr/STMC/<name>_trim.npz
+# then eval STMC/<name>_trim with the step-4 command; if it now tracks ~0.99 the fail was a boundary artifact
+```
+
+`--trim` slices all 8 time-indexed arrays (`qpos/qvel/xpos/xquat/cvel/subtree_com/site_xpos/site_xmat`)
+consistently and fixes `split_points`, so the trimmed cache stays FK-consistent and is directly evaluable.
+
+**Intended use of the verdict for scoped-STMC deployment:** treat `INTERIOR_BLOWUP`/`BOTH` clips as
+reject-and-regenerate (the reference is non-physical); treat `FRAME0_TRANSIENT` as auto-trim-then-track.
+This is the input sanity guard the stress test pointed at — *not* tracker retraining.
