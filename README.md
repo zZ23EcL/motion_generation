@@ -200,10 +200,21 @@ python fullbody/eval.py --motion_path STMC/loco_walk_turn_walk_0 ...
   samples wander/wobble" quality issue, low-quality *throughout*. `long_walk_turn_walk` does contain one
   genuine physically-impossible interior blow-up (f249–256, root_wz → 35.8 rad/s) but dies at f46 before
   reaching it. ⇒ **the predicted sustained-turn yaw drift is refuted even at the stress limit (the solid
-  result); why the 2 multi-prompt clips fail is open — best read is persistently jerky low-quality
-  references, partly generation quality and possibly partly a tracker edge.** Decisive next test:
-  low-pass-smooth the reference (with re-FK) and re-eval — tracks ⇒ generation jerkiness; fails ⇒ tracker
-  gap. Logs: `stress_eval_logs/*_seed0.log`, `stress_eval_clean.log`.
+  result).**
+
+  **Resolved (2026-06-05, `stmc_smpl_smooth.py`) — it's a generation content-quality issue, not smoothing-fixable.**
+  (1) The jerk is *generation-side*: the FAIL source `_smpl.npz` has pose ang-speed **p10 1.59 vs 0.67** for
+  the PASS source (~2.4×, matching the robot-cache jnorm-p10 ratio), so GMR faithfully passes it through.
+  (2) But it is **not high-freq jitter**: a low-pass cutoff sweep (4/3/2/1.5 Hz) cuts the peaks but the
+  **p10 floor is irreducible (~1.4–1.8, never reaches 0.67)** — "never settles" is low-frequency content
+  (continuous whole-body agitation, no stance phase), not noise. (3) Smoothing at 2 Hz (peaks ~halved) →
+  re-bridge → re-retarget → re-eval **still fails (155/1127, coverage 0.137)**, ≈ identical to the original.
+  ⇒ the failure is a **generation content-quality problem** (over-agitated, never-resting STMC samples), NOT
+  yaw drift, NOT a frame-0 transient, NOT GMR-introduced, and NOT removable by smoothing — and the
+  robot-qpos-smooth + re-FK fallback would give the same negative result, so it is not worth building. The
+  deployment guard is a **generation-quality GATE: reject-and-regenerate** samples whose reference never
+  settles (`reference_sanity.py` `jnorm_p10` high), *not* trim/smooth. Logs: `stress_eval_logs/*_seed0.log`,
+  `stress_eval_clean.log`, `stress_eval_smooth2.log`.
 
 ## Reference sanity & cleaning (`reference_sanity.py`)
 
@@ -279,8 +290,18 @@ python bridge_stmc_to_amass.py --stmc_npz <...>_smooth_smpl.npz --out_name loco_
 #   retarget (step 3) + eval (step 4) on STMC/loco_stress_sustained_left_smooth
 ```
 
-Interpretation: smoothed clip now tracks ~0.99 ⇒ the failure was generation jerkiness (deployment fix =
-generate cleaner / smooth before retarget); still fails ⇒ a genuine tracker limit on jerky turning content
-(escalate to the tracker side). Poses are filtered in the continuous 6D rotation representation then
-re-orthonormalized, so the output is always a valid rotation; `--cutoff_hz` defaults to 4 Hz (locomotion
-is <~3 Hz, so this trims wobble while preserving gait — lower it to smooth more aggressively).
+Poses are filtered in the continuous 6D rotation representation then re-orthonormalized, so the output is
+always a valid rotation; `--cutoff_hz` defaults to 4 Hz (locomotion is <~3 Hz) — lower it to smooth more
+aggressively.
+
+> **Result (2026-06-05) — this test was run and it RESOLVES the open question: it's generation content,
+> not smoothing-fixable.** `--report` localized the jerk to the **generation side** (FAIL source pose
+> ang-speed p10 **1.59** vs PASS **0.67**), so GMR is not the culprit. But a cutoff sweep (4/3/2/1.5 Hz)
+> showed the **p10 floor is irreducible** (~1.4–1.8, never reaching 0.67): "never settles" is low-frequency
+> *content* (continuous agitation, no stance phase), not high-freq jitter. Smoothing at 2 Hz (peaks halved)
+> → re-bridge → re-retarget → re-eval **still fails (155/1127, coverage 0.137)**, ≈ identical to the
+> original. ⇒ the failure is a generation **content-quality** problem, *not* removable by any smoothing
+> (source-level here, and by extension the robot-qpos + re-FK escalation — don't build it). **Deployment
+> fix = a generation-quality gate (reject-and-regenerate over-agitated samples via `jnorm_p10`), not
+> smoothing.** This tool's `--report` localizer stays useful; its `--smooth` fix does not apply to this
+> failure mode.

@@ -76,15 +76,28 @@ distribution.
     issue, i.e. low-quality *throughout*, not one bad frame. `long_walk_turn_walk` DOES contain one genuine
     physically-impossible interior blow-up (frames 249–256, root_wz → 35.8 rad/s, 0.38-rad qpos jump), but
     it **dies at frame 46, before reaching it**, so even that hard artifact is not the proximate cause.
+  - **Smoothing test (2026-06-05) — RESOLVED via `stmc_smpl_smooth.py`: it's a generation *content* quality
+    issue, and smoothing of any kind cannot fix it.** (1) *Localize:* the FAIL source `_smpl.npz` is jerkier
+    than the PASS source **at the SMPL level, before GMR** — pose ang-speed p10 **1.59 (fail) vs 0.67
+    (pass)**, ~2.4× (matching the robot-cache jnorm p10 ratio 0.78/0.3), so GMR faithfully passes the jerk
+    through; it is *generation-side*, not GMR-introduced. (2) *But it's not high-freq jitter:* a low-pass
+    cutoff sweep (4/3/2/1.5 Hz) cuts the peaks (p90/max/accel) but **the p10 floor is irreducible — stays
+    ~1.4–1.8, never approaches the passing 0.67** — because "never settles" is low-frequency *content*
+    (continuous whole-body agitation with planted feet, no stance phase), not noise. (3) *Decisive eval:*
+    smoothed at 2 Hz (peaks ~halved) → re-bridge → re-retarget → re-eval **STILL FAILS, 155/1127, coverage
+    0.137** — essentially identical to the original (152/1127, 0.135) and the trim (164/1083, 0.151).
+    Halving the peaks bought zero extra frames ⇒ the driver is the never-settling floor, which is
+    irreducible. ⇒ **the robot-qpos-smooth + re-FK fallback would give the same negative result; do NOT
+    build it.**
   - **Honest conclusion:** the faithful-test verdict holds and is strengthened (clean scoped locomotion
-    incl. the heaviest sustained turn tracks ~0.99; yaw drift refuted). **Why the 2 multi-prompt clips fail
-    is unresolved** — best current read is *persistently jerky, never-settling, low-quality multi-prompt
-    STMC references* sitting at/just past the tracker's comfort zone (partly generation quality, possibly
-    partly a tracker edge). It is NOT yaw drift and NOT the frame-0 transient. To separate "reference
-    jerkiness" from "tracker gap," the next decisive test is to **low-pass-smooth the reference (needs
-    re-FK so xpos/site_xpos stay consistent) and re-eval** — if it then tracks, it's generation quality; if
-    not, a real tracker limit. Caveat: single eval_seed. Logs: `musclemimic/stress_eval_logs/*_seed0.log`,
-    `motion_generation/stress_eval_clean.log`.
+    incl. the heaviest sustained turn tracks ~0.99; yaw drift refuted). The 2 multi-prompt failures are a
+    **generation content-quality problem**: these particular STMC samples are *over-agitated, never-resting*
+    motions (high ang-speed/jnorm **p10** = no stance phase) that the tracker can't follow to completion —
+    while it tracks every clean rhythmic-gait clip incl. the heaviest turn. It is **NOT** yaw drift, **NOT**
+    a frame-0 transient, **NOT** GMR-introduced, and **NOT** removable by smoothing. **Deployment guard is a
+    generation-quality GATE, not a filter**: reject-and-regenerate STMC samples whose reference never
+    settles (`reference_sanity.py` `jnorm_p10` high) — do NOT trim or smooth. Caveat: single eval_seed.
+    Logs: `musclemimic/stress_eval_logs/*_seed0.log`, `motion_generation/stress_eval_{clean,smooth2}.log`.
 
 ## Bridge facts (so the format layer is "free")
 
@@ -140,23 +153,21 @@ AMASS SMPL-H width 156 (root3+body63+lhand45+rhand45) and `KeyError: 'root_orien
   primary question ("does faithful scoped-STMC locomotion track?") is answered: **yes.**
 
 - Stress test ✅ DONE (2026-06-05). 3 long/sharp multi-prompt timelines built + eval'd. Yaw drift stays
-  refuted (`long_circle` +469° passes at 0.999). 2 multi-prompt clips fail, but the frame-0-transient
-  artifact hypothesis was **tested and falsified** (trim didn't fix it; a passing clip has the same
-  transient) — the failure cause is **OPEN**. See "STRESS TEST RESULT" in Key findings. New timelines:
-  `timelines/loco_stress_*.txt`; new tool `reference_sanity.py`.
+  refuted (`long_circle` +469° passes at 0.999). 2 multi-prompt clips fail; both the frame-0-transient
+  hypothesis (trim) **and** the jerk/smoothing hypothesis (`stmc_smpl_smooth.py`, 2 Hz, re-retarget+re-eval)
+  were **tested and falsified**. **Resolved: a generation content-quality issue (never-settling motion), not
+  yaw drift / GMR / tracker gap, and not smoothing-fixable.** See "STRESS TEST RESULT" in Key findings.
+  New: `timelines/loco_stress_*.txt`, `reference_sanity.py`, `stmc_smpl_smooth.py`.
 
 **What's left / where to push next:**
-1. **Decisive next experiment — smooth the reference, not trim it.** The opening-trim test already ruled
-   out the frame-0 transient as the cause. The remaining open question is "persistently jerky reference
-   (generation quality)" vs "genuine tracker gap on jerky turns". Test it by **low-pass-filtering the
-   reference qpos and re-running FK** (needs mujoco so xpos/site_xpos/cvel stay consistent — a plain
-   `reference_sanity.py --trim` won't do it), then re-eval `sustained_left`. Tracks ~0.99 ⇒ generation
-   jerkiness; still fails ⇒ real tracker limit. Also worth: multi-`--eval_seed` (single seed so far).
-2. **`reference_sanity.py` discriminator needs a rethink.** Its `FRAME0_TRANSIENT` flag over-fires
-   (`loco_walk_forward_0` is flagged but PASSES) and the trim it recommends does NOT make `sustained_left`
-   track — so "FRAME0_TRANSIENT → auto-trim-then-track" is not a valid deployment policy. The signal that
-   actually *correlates* with failure is "never settles" (jnorm p10 ≈ 0.78 for fails vs ≈ 0.3 for passes;
-   equivalently the opening-window median jnorm ~5.3 vs ~0.44) — but that's correlational, mechanism still
-   open. `INTERIOR_BLOWUP` (the f249 root_wz=35.8 blow-up) is still a valid hard-reject signal.
+1. **Deployment guard = generation-quality GATE (not smoothing/trimming).** The mechanism is settled: gate
+   scoped-STMC output on the reference *never settling* (`reference_sanity.py` `jnorm_p10` high = no stance
+   phase) → **reject-and-regenerate** that sample. Hard-reject `INTERIOR_BLOWUP` (root-ang-vel ≫ a few
+   rad/s / single-frame qpos jump) too. Do NOT trim, smooth, or build the robot-qpos-smooth + re-FK tool —
+   smoothing can't reduce the p10 floor (proven). Optional robustness: multi-`--eval_seed` (single so far),
+   and confirm the gate's `jnorm_p10` threshold on more samples.
+2. **Optionally finish `reference_sanity.py`'s gate.** `jnorm_p10` is now the primary reported signal; turn
+   it into the explicit reject criterion (it cleanly separated 5 pass ~0.3 vs 2 fail ~0.78). `FRAME0_TRANSIENT`
+   is a non-actionable boundary effect (documented). The continuous-agitation gate is the deployment lever.
 3. The composite proxy can now be formally retired in the writeup — both the faithful test and the stress
    test refute its 0.66 / yaw-drift pessimism (the heaviest sustained turn, +469°, tracks at 0.999).
